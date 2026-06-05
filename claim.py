@@ -128,6 +128,8 @@ if code == 0:
         print("[INFO] 已无新券可领（可能今日已领取）")
 elif code == 4010:
     print("[INFO] 今日已领取（code=4010）")
+elif code == 40008:
+    print("[INFO] 今日已领取或领取过于频繁（code=40008），明天自动重试即可")
 else:
     print(f"[FAIL] 领券失败 (code={code}): {msg}")
     print(f"[DEBUG] Full response: {json.dumps(result, ensure_ascii=False)[:500]}")
