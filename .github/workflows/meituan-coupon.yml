@@ -1,0 +1,28 @@
+name: 美团每日自动领券（15626208031）
+
+on:
+  schedule:
+    # 北京时间每天 11:00 = UTC 03:00
+    - cron: "0 3 * * *"
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Claim Coupon
+        env:
+          MEITUAN_USER_TOKEN:   ${{ secrets.MEITUAN_USER_TOKEN }}
+          MEITUAN_PHONE_MASKED: ${{ secrets.MEITUAN_PHONE_MASKED }}
+        run: python claim.py
