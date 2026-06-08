@@ -2,8 +2,8 @@ name: 美团每日自动领券（15626208031）
 
 on:
   schedule:
-    # 北京时间每天 11:00 = UTC 03:00
-    - cron: "0 3 * * *"
+    # 北京时间每天 09:00 = UTC 01:00（提前设置以对冲GitHub延迟）
+    - cron: "0 1 * * *"
   # 允许手动触发
   workflow_dispatch:
 
