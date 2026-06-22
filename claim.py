@@ -65,7 +65,7 @@ def http_post(path, body=None):
 
 # ── 主流程 ──
 print("=" * 50)
-print(f"[{datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')}] 美团自动领券 - 156****8031")
+print(f"[{datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')}] 美团自动领券 - {PHONE_MASKED}")
 print("=" * 50)
 
 # 1. 验证 token

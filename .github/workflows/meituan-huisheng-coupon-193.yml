@@ -1,0 +1,27 @@
+name: 美团惠省优惠助手 - 每日自动领券（19397868909）
+
+on:
+  schedule:
+    # 北京时间每天 9:00 = UTC 01:00
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Claim Huisheng Coupon
+        env:
+          MEITUAN_USER_TOKEN: ${{ secrets.MEITUAN_USER_TOKEN_193 }}
+          MEITUAN_AI_SCENE:   ${{ secrets.MEITUAN_AI_SCENE }}
+        run: python huisheng_claim.py
