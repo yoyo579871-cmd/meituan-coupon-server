@@ -13,9 +13,9 @@ import urllib.error
 from datetime import datetime, timezone, timedelta
 
 # ── 环境变量 ──
-USER_TOKEN   = os.environ.get("MEITUAN_USER_TOKEN", "")
-PHONE_MASKED = os.environ.get("MEITUAN_PHONE_MASKED", "")
-SUB_CHANNEL  = os.environ.get("MEITUAN_SUB_CHANNEL", "6511ba14351d4bbc8957722912b4c2d6")
+USER_TOKEN   = os.environ.get("MEITUAN_USER_TOKEN", "").strip()
+PHONE_MASKED = os.environ.get("MEITUAN_PHONE_MASKED", "").strip()
+SUB_CHANNEL  = os.environ.get("MEITUAN_SUB_CHANNEL", "6511ba14351d4bbc8957722912b4c2d6").strip()
 
 BASE_URL = "https://peppermall.meituan.com"
 CST = timezone(timedelta(hours=8))
@@ -128,8 +128,8 @@ if code == 0:
         print("[INFO] 已无新券可领（可能今日已领取）")
 elif code == 4010:
     print("[INFO] 今日已领取（code=4010）")
-elif code == 40008:
-    print("[INFO] 今日已领取或领取过于频繁（code=40008），明天自动重试即可")
+elif code in (4008, 40008):
+    print(f"[INFO] 今日已领取或领取过于频繁（code={code}），明天自动重试即可")
 else:
     print(f"[FAIL] 领券失败 (code={code}): {msg}")
     print(f"[DEBUG] Full response: {json.dumps(result, ensure_ascii=False)[:500]}")
