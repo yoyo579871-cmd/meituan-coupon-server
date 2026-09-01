@@ -108,21 +108,37 @@ msg = result.get("message", "")
 
 print(f"[RESULT] code={code} msg={msg}")
 
+def _fen2yuan(fen):
+    """分转元（接口金额字段单位为分）"""
+    try:
+        return int(fen) / 100
+    except (TypeError, ValueError):
+        return 0.0
+
+
 if code == 0:
     data = result.get("data", {})
     success_list = data.get("successEquityList", [])
-    fail_list = data.get("failEquityList", [])
+    fail_list = data.get("failedEquityList", [])
     if success_list:
-        total = len(success_list)
-        total_yuan = sum(float(c.get("equityAmount", 0)) for c in success_list)
-        print(f"[SUCCESS] 领到 {total} 张券，面额共 {total_yuan} 元")
+        total_yuan = sum(_fen2yuan(c.get("discountAmount", 0)) for c in success_list)
+        print(f"[SUCCESS] 领到 {len(success_list)} 张券，面额共 {total_yuan:.0f} 元")
         for c in success_list:
-            print(f"  - {c.get('equityName', '?')}: {c.get('equityAmount', 0)}元 "
-                  f"(满{c.get('equityThreshold', 0)}元) 有效期:{c.get('endTimeText', '?')}")
+            name = c.get("userEquityName") or c.get("equityName") or "?"
+            amount = c.get("discountAmountYuanStr") or f"{_fen2yuan(c.get('discountAmount', 0)):.0f}"
+            threshold = c.get("priceLimitAmountYuanStr") or f"{_fen2yuan(c.get('priceLimitAmount', 0)):.0f}"
+            end_ts = c.get("endTime") or c.get("endTimeText")
+            end_str = "?"
+            if end_ts:
+                try:
+                    end_str = datetime.fromtimestamp(int(end_ts) / 1000, CST).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    end_str = str(end_ts)
+            print(f"  - {name}: 满{threshold}减{amount} 有效期至{end_str}")
     elif fail_list:
         print(f"[WARN] {len(fail_list)} 张券领取失败")
         for c in fail_list:
-            print(f"  - {c.get('equityName', '?')}: {c.get('failReason', '?')}")
+            print(f"  - {c.get('equityName', c.get('failReason', '?'))}: {c.get('failReason', '?')} (code={c.get('failCode', '?')})")
     else:
         # 可能今天已领过
         print("[INFO] 已无新券可领（可能今日已领取）")
