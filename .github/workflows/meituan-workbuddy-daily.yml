@@ -2,27 +2,39 @@ name: 美团 WorkBuddy 专属券 - 每日自动领券
 
 on:
   schedule:
-    # UTC 18:00 = 北京凌晨02:00，对冲 GitHub 7-8 小时延迟后实际在北京 09:00-10:00 触发
-    - cron: "0 18 * * *"
-  # 允许手动触发
+    # UTC 03:17 = 北京时间 11:17。不依赖固定排队延迟，也不宣称这是开放时间。
+    - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      check_only:
+        description: "只检查凭据指纹，不发起领取；首次核对请保持勾选"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meituan-workbuddy-claim
+  cancel-in-progress: false
 
 jobs:
   claim:
     runs-on: ubuntu-latest
     timeout-minutes: 3
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Claim WorkBuddy Coupon
+      - name: Check configuration or claim coupons
         env:
           MEITUAN_PT_TOKEN: ${{ secrets.MEITUAN_PT_TOKEN }}
           MEITUAN_AI_SCENE: a0d4da77f918ab204d86c911fcdd0ce1
-        run: python claim_workbuddy.py
+          CHECK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.check_only }}
+        run: |
+          if [ "$CHECK_ONLY" = "true" ]; then
+            python claim_workbuddy.py --check-config
+          else
+            python claim_workbuddy.py
+          fi

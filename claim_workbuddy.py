@@ -1,114 +1,132 @@
 #!/usr/bin/env python3
+"""WorkBuddy coupon request with explicit outcomes and an offline config check.
+
+The unsigned transport is retained until a supported Linux signing integration
+is verified. A 1014 response does not prove prior receipt or an opening time.
 """
-美团 WorkBuddy 专属券 - 云端自动领券
-入口与本地「美团生活助手」完全一致：
-    POST https://media.meituan.com/fulishemini/couponActivity/sendCouponWork
-凭证：pt-passport token，从环境变量 MEITUAN_PT_TOKEN 读取（GitHub Secrets 维护）
-注意：脚本内不硬编码任何用户凭证。
-"""
+import argparse
+import hashlib
 import json
 import os
 import sys
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone, timedelta
+import urllib.request
+from datetime import datetime, timedelta, timezone
 
-TOKEN    = os.environ.get("MEITUAN_PT_TOKEN", "").strip()
-AI_SCENE = os.environ.get("MEITUAN_AI_SCENE", "a0d4da77f918ab204d86c911fcdd0ce1").strip()
-
-BASE_URL = "https://media.meituan.com"
-ISSUE_PATH = "/fulishemini/couponActivity/sendCouponWork"
+ENDPOINT = "https://media.meituan.com/fulishemini/couponActivity/sendCouponWork"
+DEFAULT_SCENE = "a0d4da77f918ab204d86c911fcdd0ce1"
 CST = timezone(timedelta(hours=8))
 
-print("=" * 56)
-print(f"[{datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')}] 美团 WorkBuddy 专属券 - 云端自动领券")
-print("=" * 56)
 
-if not TOKEN:
-    print("[FATAL] MEITUAN_PT_TOKEN 未设置！请在仓库 Settings -> Secrets 中添加。")
-    sys.exit(1)
+def safe_text(value, token):
+    text = str(value)
+    if token:
+        text = text.replace(token, "[REDACTED]")
+    return " ".join(text.split())[:200]
 
-# 只打印前缀与长度，绝不输出完整 token
-print(f"[ENV] TOKEN={TOKEN[:8]}... (len={len(TOKEN)}) | aiScene={AI_SCENE[:8]}...")
 
-body = {"token": TOKEN, "aiScene": AI_SCENE, "version": 2}
-req = urllib.request.Request(
-    BASE_URL + ISSUE_PATH,
-    data=json.dumps(body).encode("utf-8"),
-    headers={
+def classify(http_status, payload):
+    if not 200 <= http_status < 300:
+        return "http_error", 1, 0
+    if not isinstance(payload, dict):
+        return "invalid_response", 1, 0
+    code = payload.get("code")
+    if code == 401:
+        return "authentication_failed", 1, 0
+    if code == 1014:
+        return "claim_rejected_reason_unknown", 1, 0
+    if code in (509, 50200):
+        return "rate_limited", 1, 0
+    if code != 200:
+        return "business_error", 1, 0
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return "invalid_response", 1, 0
+    coupons = data.get("couponList")
+    if not isinstance(coupons, list) or not all(isinstance(c, dict) for c in coupons):
+        return "invalid_response", 1, 0
+    if not coupons:
+        return "no_coupons_confirmed", 1, 0
+    return "claimed", 0, len(coupons)
+
+
+def record(status, exit_code, count=0, http_status=None, code=None):
+    # Only allowlisted, non-credential fields are written to the step summary.
+    result = {"status": status, "coupon_count": count,
+              "http_status": http_status, "business_code": code}
+    print("[OUTCOME] " + json.dumps(result, ensure_ascii=False))
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        try:
+            with open(summary_path, "a", encoding="utf-8") as summary:
+                summary.write("\n### WorkBuddy coupon result\n\n")
+                summary.write(f"- Status: `{status}`\n- Confirmed coupons: {count}\n")
+                summary.write(f"- HTTP status: {http_status}\n- Business code: {code}\n")
+        except OSError:
+            print("[WARN] Could not write the Actions step summary")
+    return exit_code
+
+
+def main(argv=None, opener=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check-config", action="store_true",
+                        help="Show a credential fingerprint; make no HTTP request")
+    args = parser.parse_args(argv)
+    token = os.environ.get("MEITUAN_PT_TOKEN", "").strip()
+    scene = os.environ.get("MEITUAN_AI_SCENE", DEFAULT_SCENE).strip()
+    print(f"[{datetime.now(CST):%Y-%m-%d %H:%M:%S %z}] WorkBuddy coupon job")
+    if not token or not scene:
+        print("[FAIL] MEITUAN_PT_TOKEN or MEITUAN_AI_SCENE is empty")
+        return record("configuration_error", 1)
+    if args.check_config:
+        fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+        print(f"[CONFIG] token_length={len(token)} token_sha256_16={fingerprint}")
+        print(f"[CONFIG] scene_matches_default={scene == DEFAULT_SCENE}")
+        print("[CONFIG] No request was sent; authentication and claiming remain unverified")
+        return record("configuration_checked_only", 0)
+
+    body = json.dumps({"token": token, "aiScene": scene, "version": 2}).encode("utf-8")
+    req = urllib.request.Request(ENDPOINT, data=body, method="POST", headers={
         "Content-Type": "application/json; charset=utf-8",
         "User-Agent": "GitHub-Actions/1.0",
-    },
-    method="POST",
-)
-
-try:
-    with urllib.request.urlopen(req, timeout=25) as r:
-        raw = r.read().decode("utf-8")
-except urllib.error.HTTPError as e:
-    raw = e.read().decode("utf-8")
-    print(f"[HTTPError] status={e.code}")
-except Exception as e:
-    print(f"[FATAL] 请求异常: {e}")
-    sys.exit(1)
-
-try:
-    resp = json.loads(raw)
-except Exception:
-    print("[FATAL] 响应解析失败，原文前300字符：")
-    print(raw[:300])
-    sys.exit(1)
-
-code = resp.get("code")
-msg = resp.get("msg") or resp.get("message") or ""
-print(f"[RESULT] code={code} msg={msg}")
-
-
-def yuan(fen):
-    """分转元"""
+    })
+    opener = opener or urllib.request.urlopen
     try:
-        return int(fen) / 100
-    except (TypeError, ValueError):
-        return 0
+        with opener(req, timeout=25) as response:
+            http_status = response.status
+            raw = response.read(1024 * 1024).decode("utf-8")
+    except urllib.error.HTTPError as error:
+        print(f"[FAIL] HTTP status={error.code}; no coupon receipt confirmed")
+        return record("http_error", 1, http_status=error.code)
+    except (urllib.error.URLError, TimeoutError, OSError, UnicodeError):
+        # Do not echo exception URLs or bodies, or automatically replay a POST
+        # whose delivery may already have happened.
+        print("[FAIL] Transport/decoding error; request outcome is unknown")
+        return record("transport_error_outcome_unknown", 1)
 
-
-def fmt_time(v):
-    """兼容时间戳(ms)或字符串"""
-    if not v:
-        return "?"
     try:
-        return datetime.fromtimestamp(int(v) / 1000, CST).strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return str(v)
-
-
-if code == 200:
-    data = resp.get("data") or {}
-    coupons = data.get("couponList") or []
-    if coupons:
-        total = sum(yuan(c.get("couponValue", 0)) for c in coupons)
-        print(f"[SUCCESS] 领到 {len(coupons)} 张券，面额共 {total:.0f} 元")
-        for c in coupons:
-            name = c.get("couponName") or c.get("name") or "?"
-            print(
-                f"  - {name}: 满{yuan(c.get('priceLimit', 0)):.0f}减{yuan(c.get('couponValue', 0)):.0f}"
-                f" 有效期 {fmt_time(c.get('couponStartTime'))} 至 {fmt_time(c.get('couponEndTime'))}"
-            )
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        print("[FAIL] Response is not valid JSON; raw response omitted")
+        return record("invalid_response", 1, http_status=http_status)
+    status, exit_code, count = classify(http_status, payload)
+    code = payload.get("code") if isinstance(payload, dict) else None
+    # Unexpected code types are untrusted content, never summary markup.
+    code = code if type(code) is int else None
+    message = (payload.get("msg") or payload.get("message") or "") if isinstance(payload, dict) else ""
+    print(f"[RESULT] http={http_status} code={code} msg={safe_text(message, token)}")
+    if status == "claimed":
+        print(f"[SUCCESS] Confirmed {count} coupons")
+    elif status == "claim_rejected_reason_unknown":
+        print("[FAIL] 发券失败，原因未确认；不能据此判定今日已领、开放时间或 Token 有效")
+    elif status == "authentication_failed":
+        print("[FAIL] Authentication failed; check the WorkBuddy credential")
+    elif status == "no_coupons_confirmed":
+        print("[FAIL] Success code but empty coupon list; no receipt confirmed")
     else:
-        print("[INFO] 接口返回成功，但本次无券列表（今日券池为空）")
-elif code == 1014:
-    print("[INFO] 今日已领取（code=1014），每天一次，明天自动重试即可")
-elif code == 401:
-    print("[FAIL] 登录态已过期（code=401）")
-    print("       → 请在本地重新登录美团账号，并把新的 pt-passport token")
-    print("         更新到 GitHub Secret：MEITUAN_PT_TOKEN")
-    sys.exit(1)
-elif code in (509, 50200):
-    print(f"[INFO] 请求过于频繁（code={code}），稍后重试即可")
-else:
-    print(f"[FAIL] 领券失败 code={code} msg={msg}")
-    print("[DEBUG] " + raw[:400])
-    sys.exit(1)
+        print(f"[FAIL] {status}")
+    return record(status, exit_code, count, http_status, code)
 
-print("=" * 56)
-print("[DONE] 执行完毕")
+
+if __name__ == "__main__":
+    sys.exit(main())
