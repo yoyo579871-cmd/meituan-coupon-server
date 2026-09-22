@@ -2,8 +2,10 @@ name: 美团 WorkBuddy 专属券 - 每日自动领券
 
 on:
   schedule:
-    # UTC 03:17 = 北京时间 11:17。不依赖固定排队延迟，也不宣称这是开放时间。
-    - cron: "17 3 * * *"
+    # UTC 18:17 = 北京时间/新加坡时间 02:17。
+    # 放在午夜之后并避开整点；GitHub 的正常排队延迟通常会落到清晨。
+    # 这只是执行时段，不宣称它是活动开放时间。
+    - cron: "17 18 * * *"
   workflow_dispatch:
     inputs:
       check_only:
