@@ -1,35 +1,59 @@
-# WorkBuddy 领券结果与凭据核对
+# WorkBuddy 领券修复与验收
 
-本次改动修正失败误报并增加无领取副作用的诊断入口，尚未证明云端恢复领取。原来的 Python 请求没有本地 WorkBuddy 的 CLIGuard 公参/签名流程，本次没有将未验证的私有组件搬入云端。
+## 为什么以前能领，现在没有满 40 减 20
 
-## 已修正
+2026-09-23 核对了三条独立流程，时间均为 UTC+8：
 
-- 1014 按“发券失败，原因未确认”处理，以非零退出码结束。
-- 网络、HTTP、解析、未知业务错误均不再显示成功。
-- code=200 且 couponList 非空才报告已领取；空列表不推断为券池为空。
-- 不打印 Token 前缀或完整原始响应。仅手动配置检查输出 SHA-256 前 16 个十六进制字符供本地比对。
-- 默认手动运行只检查配置，不发送请求。要实际领取，需取消 check_only。
-- 定时设置为 UTC 19:17，即北京时间/新加坡时间 03:17；按已观察到的排队延迟，预期在 05:47-07:17 执行并避开整点。此时间不是已证实的活动开放时间，也不能保证 GitHub 在极端高负载下不再延迟。
-- 串行执行 WorkBuddy job；不盲目重试可能已经送达的领取 POST。
+| 流程 | 证据 | 结论 |
+|---|---|---|
+| 红包助手 `peppermall.meituan.com/eds/standard/equity/pkg/issue/claw` | [09-14 04:02](https://github.com/yoyo579871-cmd/meituan-coupon-server/actions/runs/34779485173) 返回 40-20；[09-15 05:12](https://github.com/yoyo579871-cmd/meituan-coupon-server/actions/runs/34897482259) 返回同名 40-12，两次代码均为 b429d91 | 服务端返回的券面额改变 |
+| 惠省 `media.meituan.com/fulishemini/couponActivity/sendCouponByAi` | [09-11 04:41](https://github.com/yoyo579871-cmd/meituan-coupon-server/actions/runs/34527840935) 成功；[09-12 04:46](https://github.com/yoyo579871-cmd/meituan-coupon-server/actions/runs/34645939551) 返回 1014 发券失败 | 旧脚本误报已领，绿色不能证明领取成功 |
+| WorkBuddy `media.meituan.com/fulishemini/couponActivity/sendCouponWork` | 09-20 新增；[09-23 06:09](https://github.com/yoyo579871-cmd/meituan-coupon-server/actions/runs/35790790384) 云端失败；10:51:35 本机执行同一 Python 脚本也失败；10:51:50 原 WorkBuddy 流程成功 36 张，含 40-20 | 新脚本与可工作的本地请求不等价 |
 
-## 先完成凭据核对
+尚无证据证明官方简单地迁移了入口。旧渠道券内容变化、新渠道请求实现不完整是两个独立问题。1014 只是服务端失败码，不能据此断定已领取、活动未开放、Token 有效或 IP 风控。
 
-1. 在本地受控环境内读取当前 WorkBuddy 实际使用的 pt-passport Token，并更新仓库 Secret MEITUAN_PT_TOKEN。不要把 Token 发到聊天、Issue 或提交到仓库。
-2. 在修复分支手动运行 workflow，保留 check_only=true；与本地 SHA-256 指纹比较。此结果只证明配置一致，不证明 Token 有效或领取成功。
-3. 在尚未领取的日期再进行最少量的真实运行。若仍失败，继续验证签名组件及云端环境；不得将 1014 直接归因于时间、已领、过期或 IP。
+## 本次修复
 
-## 本地离线测试
+本地 WorkBuddy 的无网络请求构造检查实际生成了 `csecplatform`、`csecversion` 查询参数及非空 `mtgsig` 请求头。原云端代码遗漏了这些处理。
+
+- 使用与成功本地客户端字节完全相同的 CLIGuard 1.3.1 核心，调用 `addCommonParams` 和 `signRequest`。
+- JSON 使用紧凑 UTF-8 字节；对前 16200 字节计算 MD5，再对已添加公共参数的 URL 签名。发送的正文与签名正文相同。
+- 补齐 `X-Requested-With: XMLHttpRequest`，取消原来的 `GitHub-Actions/1.0` 自定义 User-Agent。
+- 签名缺失或组件不可用时立即失败，不发送无签名请求。
+- 只有 code=200、券列表有效且含满 40 减 20 才显示目标领取成功。领到其他券但缺目标券会返回 `claimed_target_missing`，并保留已领数量。
+- 网络超时和 1014 不自动重放 POST；输出不包含 Token、签名值或完整原始响应。
+
+## 组件来源和完整性
+
+组件从 WorkBuddy 官方客户端所配置的专家市场分发地址下载：
+
+https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/expert-marketplace/bundles/meituan-living-assistant.tar.gz
+
+官方 WorkBuddy 应用的 `EXPERT_CENTER_COS_CONFIG.baseUrl` 和 `ExpertPluginService` bundle 地址构造与该 URL 一致。下载包中的签名核心与本机成功领取所用 1.0.9 插件的核心文件 SHA-256 完全一致。
+
+- 下载包 SHA-256：`ec9e9d2e2758ae7fdfff2b1ffc454bc9b8e2ef153989fb6f68d34e8bfa24e07b`
+- `cliguard.js` SHA-256：`eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf`
+- `package.json` SHA-256：`99f781a091ab69ef851a7a20802d413092171e94333603a6953afaaf5a7aeeff`
+
+仓库只包含下载器和接入代码，不重新发布组件源码。下载器严格校验哈希，只提取上述两个普通文件到 `.runtime/cliguard`。工作流缓存这两个可校验文件，不复制或缓存本机账号、设备标识或用户目录。若缓存缺失且官方 bundle 已变化，安装会报错，需重新审核校验值。
+
+## 检查和运行
 
 ```bash
 python -m unittest -v
+node --test test_sign_workbuddy.cjs
+python install_workbuddy_sdk.py
+# 设置 MEITUAN_PT_TOKEN 和 WORKBUDDY_CLIGUARD_MODULE 后：
+python claim_workbuddy.py --check-config
+python claim_workbuddy.py --check-request
 ```
 
-测试注入模拟响应，不访问美团、不使用真实凭据、不发券。
+`--check-config` 只输出脱敏指纹，`--check-request` 验证签名构造；二者都不调用领取接口，不能当作领券成功。GitHub 手动任务默认勾选 `check_only`，会完成两项检查。取消勾选才实际请求领取。
 
-## 待验证
+定时计划仍为 UTC 19:17，即北京时间／新加坡时间次日 03:17。GitHub 排队延迟不固定，不能按历史延迟推算保证执行时刻。
 
-- 云端与本地使用完整相同的 Token。
-- WorkBuddy 本地签名组件的受支持 Linux 安装方式及实际请求行为。
-- 一次未被本地提前领取影响的云端真实领取结果。
+## 验收边界
 
-这些事项完成前，应保留草稿 PR，不把本次结果处理修正称为“已恢复自动领取”。
+此修复补上了已经验证缺失的客户端处理。目标券是否仍向账号发放由服务端决定，代码无法承诺每天固定面额。
+
+09-23 的券已经由本地成功领取，不重复领取作为验收。修复版需要在下一个尚未领取的日期，以真实云端响应 `code=200` 且 `target_40_20_count > 0` 完成业务验收。配置检查、签名检查和测试通过都不等于该业务验收完成。

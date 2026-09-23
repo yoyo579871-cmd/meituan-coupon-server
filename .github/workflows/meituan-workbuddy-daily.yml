@@ -3,13 +3,13 @@ name: 美团 WorkBuddy 专属券 - 每日自动领券
 on:
   schedule:
     # UTC 19:17 = 北京时间/新加坡时间 03:17。
-    # 放在午夜之后并避开整点；按已观察到的排队延迟，通常会落在 05:47-07:17。
-    # 这只是执行时段，不宣称它是活动开放时间。
+    # 避开整点并给 08:00 前使用留出余量；GitHub 排队延迟不固定。
+    # 这只是计划执行时间，不宣称它是活动开放时间。
     - cron: "17 19 * * *"
   workflow_dispatch:
     inputs:
       check_only:
-        description: "只检查凭据指纹，不发起领取；首次核对请保持勾选"
+        description: "只检查凭据和签名构造，不发起领取"
         type: boolean
         default: true
 
@@ -23,20 +23,31 @@ concurrency:
 jobs:
   claim:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/cache@v4
+        with:
+          path: .runtime/cliguard
+          key: workbuddy-cliguard-eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf
+      - name: Install verified WorkBuddy signing SDK
+        run: python install_workbuddy_sdk.py
       - name: Check configuration or claim coupons
         env:
           MEITUAN_PT_TOKEN: ${{ secrets.MEITUAN_PT_TOKEN }}
           MEITUAN_AI_SCENE: a0d4da77f918ab204d86c911fcdd0ce1
           CHECK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.check_only }}
+          WORKBUDDY_CLIGUARD_MODULE: ${{ github.workspace }}/.runtime/cliguard/cliguard.js
         run: |
           if [ "$CHECK_ONLY" = "true" ]; then
             python claim_workbuddy.py --check-config
+            python claim_workbuddy.py --check-request
           else
             python claim_workbuddy.py
           fi
