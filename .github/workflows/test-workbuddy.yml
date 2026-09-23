@@ -4,6 +4,21 @@ on:
     paths:
       - claim_workbuddy.py
       - test_claim_workbuddy.py
+      - test_install_workbuddy_sdk.py
+      - sign_workbuddy.cjs
+      - test_sign_workbuddy.cjs
+      - install_workbuddy_sdk.py
+      - .github/workflows/test-workbuddy.yml
+      - .github/workflows/meituan-workbuddy-daily.yml
+  push:
+    branches: [main]
+    paths:
+      - claim_workbuddy.py
+      - test_claim_workbuddy.py
+      - test_install_workbuddy_sdk.py
+      - sign_workbuddy.cjs
+      - test_sign_workbuddy.cjs
+      - install_workbuddy_sdk.py
       - .github/workflows/test-workbuddy.yml
       - .github/workflows/meituan-workbuddy-daily.yml
 permissions:
@@ -11,10 +26,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: python -m unittest -v
+      - run: node --test test_sign_workbuddy.cjs
+      - name: Verify pinned SDK and Linux signing without claiming
+        env:
+          MEITUAN_PT_TOKEN: offline-test-placeholder
+          WORKBUDDY_CLIGUARD_MODULE: ${{ github.workspace }}/.runtime/cliguard/cliguard.js
+        run: |
+          python install_workbuddy_sdk.py
+          python claim_workbuddy.py --check-request
