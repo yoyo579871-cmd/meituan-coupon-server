@@ -32,12 +32,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: sdk-cache
         with:
           path: .runtime/cliguard
           key: workbuddy-cliguard-eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf
       - name: Install verified WorkBuddy signing SDK
         run: python install_workbuddy_sdk.py
+      # Save as soon as installation is verified. A rejected claim must not
+      # discard an unrelated, successfully installed SDK.
+      - name: Save verified SDK before claiming
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .runtime/cliguard
+          key: workbuddy-cliguard-eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf
       - name: Check configuration or claim coupons
         env:
           MEITUAN_PT_TOKEN: ${{ secrets.MEITUAN_PT_TOKEN }}
