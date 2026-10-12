@@ -10,6 +10,7 @@ on:
       - install_workbuddy_sdk.py
       - .github/workflows/test-workbuddy.yml
       - .github/workflows/meituan-workbuddy-daily.yml
+      - .github/workflows/meituan-workbuddy-7003.yml
   push:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - install_workbuddy_sdk.py
       - .github/workflows/test-workbuddy.yml
       - .github/workflows/meituan-workbuddy-daily.yml
+      - .github/workflows/meituan-workbuddy-7003.yml
 permissions:
   contents: read
 jobs:

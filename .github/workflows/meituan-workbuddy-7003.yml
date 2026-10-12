@@ -1,0 +1,81 @@
+name: 美团 WorkBuddy 每日领券（181****7003）
+
+on:
+  schedule:
+    # UTC 19:17 = 北京时间／新加坡时间次日 03:17。
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "只检查新账号凭据和签名，不发起领取"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meituan-workbuddy-7003-claim
+  cancel-in-progress: false
+
+jobs:
+  account:
+    name: Check account authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      enabled: ${{ steps.authorization.outputs.enabled }}
+    steps:
+      - id: authorization
+        env:
+          PT_TOKEN: ${{ secrets.MEITUAN_PT_TOKEN_7003 }}
+        run: |
+          if [ -n "$PT_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::181****7003 尚未完成授权，未发起领取请求"
+            echo "181****7003: pending authorization; no claim request sent." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  claim:
+    name: Claim for 181****7003
+    needs: account
+    if: needs.account.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/cache/restore@v4
+        id: sdk-cache
+        with:
+          path: .runtime/cliguard
+          key: workbuddy-cliguard-eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf
+      - name: Install verified WorkBuddy signing SDK
+        run: python install_workbuddy_sdk.py
+      - name: Save verified SDK before claiming
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .runtime/cliguard
+          key: workbuddy-cliguard-eff1a324fdec2201ef021da00d02e64324cbf59e1328966718e4a43c6b6626cf
+      - name: Check configuration or claim coupons
+        env:
+          MEITUAN_PT_TOKEN: ${{ secrets.MEITUAN_PT_TOKEN_7003 }}
+          MEITUAN_AI_SCENE: a0d4da77f918ab204d86c911fcdd0ce1
+          CHECK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.check_only }}
+          WORKBUDDY_CLIGUARD_MODULE: ${{ github.workspace }}/.runtime/cliguard/cliguard.js
+        run: |
+          if [ "$CHECK_ONLY" = "true" ]; then
+            python claim_workbuddy.py --check-config
+            python claim_workbuddy.py --check-request
+          else
+            python claim_workbuddy.py
+          fi

@@ -1,5 +1,13 @@
 # WorkBuddy 领券修复与验收
 
+## 新增账号 181****7003
+
+独立工作流 `meituan-workbuddy-7003.yml` 复用同一个经过验证的签名领取脚本，使用独立 Secret `MEITUAN_PT_TOKEN_7003` 和独立并发组。定时计划为北京时间／新加坡时间每天 03:17。GitHub 排队可能延迟实际执行时间。
+
+新账号必须先在 WorkBuddy 的美团助手中完成授权，将对应 Token 保存到这个独立 Secret。手机号本身不能用于发券。Secret 未配置时任务明确提示 pending authorization，领取 job 被跳过，不调用美团接口。已有账号的 Secret 和流程不受这项新增影响。
+
+配置凭据后，先用手动 `check_only=true` 核对配置和签名，再用 `check_only=false` 实际领取。是否取得 40-20 由该账号的活动资格和实际返回决定。
+
 ## 为什么以前能领，现在没有满 40 减 20
 
 2026-09-23 核对了三条独立流程，时间均为 UTC+8：
